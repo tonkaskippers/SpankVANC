@@ -1,3 +1,20 @@
+# November 5, 2026 — Linux VM / caption text over TCP (unreleased)
+
+User requested running on a Linux VM under Proxmox and sending captions over a
+TCP/IP socket (Telnet/raw text) instead of embedding through Blackmagic. Added
+output kind `tcp` (`spankvanc/caption_tcp.py`): Whisper `Whisper CC1:` phrases
+are forwarded by `Engine._whisper_log` to per-output socket threads (client
+reconnect or `?listen=1` broadcast). TCP outputs force recaption/strip/`text`,
+are skipped by `command()` and do not require the patched engine. The Whisper
+journal is the null device when no embedding output exists. `serve --host`
+beyond loopback requires SPANKVANC_PASSWORD and `--allow-host`. Docs:
+`docs/LINUX_VM.md`, `examples/spankvanc.service`,
+`examples/vm-caption-tcp-route.json`. Tests: `tests/test_caption_tcp.py` (15) and
+`tests/check_caption_tcp_browser.py`. A stock-FFmpeg end-to-end route with a stub
+recognizer delivered all phrases over TCP. Not verified with a physical encoder,
+Proxmox guest or real Whisper on a VM. Version is still 0.14.0; no release assets
+were rebuilt.
+
 # November 3, 2026 — 0.14.0 Windows release preparation
 
 Packages the current local translation/CC2 work and earlier unpublished native

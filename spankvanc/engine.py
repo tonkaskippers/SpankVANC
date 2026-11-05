@@ -44,6 +44,8 @@ class ConfigError(ValueError):
 
 
 def video_codec_options(destination: str) -> dict[str, str]:
+    if destination == "tcp":
+        return {"text": "Caption text only (no video)"}
     if destination == "decklink":
         return {"uncompressed": "Uncompressed SDI"}
     if destination in ("rtmp", "youtube"):
@@ -89,7 +91,7 @@ def srt_address(endpoint: dict) -> str:
 
 def scte_matrix() -> dict:
     return {source: {destination: scte_options(source, destination)
-                     for destination in ("decklink", "udp", "srt", "file", "rtmp", "youtube")}
+                     for destination in ("decklink", "udp", "srt", "file", "rtmp", "youtube", "tcp")}
             for source in ("decklink", "udp", "srt", "file", "rtmp")}
 
 
@@ -135,13 +137,31 @@ def validate(raw: dict, *, check_scte: bool = True) -> dict:
     names = set()
     for out in cfg["outputs"]:
         required = {"name", "kind", "address", "captions", "scte", "enabled"}
-        if not isinstance(out, dict) or not required <= set(out) or set(out) - required - {"video_codec", "youtube_server", "youtube_stream_key", "youtube_bitrate_mbps", "srt_mode", "caption_format", "spanish_cc2"}:
+        if not isinstance(out, dict) or not required <= set(out) or set(out) - required - {"video_codec", "youtube_server", "youtube_stream_key", "youtube_bitrate_mbps", "srt_mode", "caption_format", "spanish_cc2", "tcp_uppercase", "tcp_line_ending"}:
             raise ConfigError("Each output needs name, kind, address, captions, scte, enabled")
         if not isinstance(out["name"], str) or not 1 <= len(out["name"]) <= 100 or out["name"] in names:
             raise ConfigError("Output names must be nonempty and unique")
         names.add(out["name"])
-        if out["kind"] not in ("decklink", "udp", "srt", "rtmp", "youtube", "file"):
+        if out["kind"] not in ("decklink", "udp", "srt", "rtmp", "youtube", "file", "tcp"):
             raise ConfigError("Unknown output type")
+        if out["kind"] == "tcp":
+            # Raw-text caption feed to an external encoder: Whisper text only.
+            out.setdefault("video_codec", "text")
+            out.setdefault("tcp_uppercase", False)
+            out.setdefault("tcp_line_ending", "crlf")
+            if type(out["tcp_uppercase"]) is not bool:
+                raise ConfigError("Caption TCP uppercase must be true or false")
+            if out["tcp_line_ending"] not in ("crlf", "cr", "lf"):
+                raise ConfigError("Caption TCP line ending must be crlf, cr or lf")
+            if out["captions"] != "recaption":
+                raise ConfigError(f"{out['name']}: caption TCP output sends audioWhisper text; select audioWhisper captions")
+            if out["scte"] != "strip":
+                raise ConfigError(f"{out['name']}: caption TCP output carries no SCTE; select Strip")
+            if out.get("spanish_cc2"):
+                raise ConfigError(f"{out['name']}: Spanish CC2 is not available on caption TCP output")
+            out.setdefault("caption_format", "608")
+        else:
+            out.pop("tcp_uppercase", None); out.pop("tcp_line_ending", None)
         # Older saved routes used H.264 implicitly; preserve that default.
         out.setdefault("video_codec", "uncompressed" if out["kind"] == "decklink" else "h264")
         if not isinstance(out["video_codec"], str) or out["video_codec"] not in video_codec_options(out["kind"]):
@@ -245,6 +265,13 @@ def endpoint(kind, address, allow_empty=False):
             raise ConfigError("File endpoint must be a local path")
         return
     parsed = urlsplit(address)
+    if kind == "tcp":
+        from .caption_tcp import TcpAddressError, parse_address
+        try:
+            parse_address(address)
+        except TcpAddressError as exc:
+            raise ConfigError(str(exc)) from exc
+        return
     schemes = {"udp": ("udp",), "srt": ("srt",), "rtmp": ("rtmp", "rtmps"), "youtube": ("rtmps",)}
     try:
         port = parsed.port
@@ -444,7 +471,7 @@ def plan(raw: dict, capabilities: dict | None = None) -> dict:
         label = out["name"]
         kind = out["kind"]
         codec = out["video_codec"]
-        if kind != "decklink":
+        if kind not in ("decklink", "tcp"):
             encoder = "libx264" if codec == "h264" else "mpeg2video"
             if not cap.get(encoder):
                 blockers.append(f"{label}: FFmpeg needs the {encoder} encoder")
@@ -518,7 +545,7 @@ def plan(raw: dict, capabilities: dict | None = None) -> dict:
             w=cap.get("whisper",{})
             if not w.get("available"):
                 blockers.append(f"{label}: configure a Python installation with Whisper, PyTorch and NumPy")
-            if not cap.get("recaption_decklink"):
+            if kind != "tcp" and not cap.get("recaption_decklink"):
                 blockers.append(f"{label}: rebuild the selected engine with the live 608 replacement filter")
             if cfg["whisper"]["device"]=="cuda" and not w.get("cuda"):
                 blockers.append(f"{label}: CUDA requested but unavailable in Whisper Python")
@@ -526,12 +553,17 @@ def plan(raw: dict, capabilities: dict | None = None) -> dict:
                 blockers.append(f"{label}: model unavailable in installed Whisper; choose a supported model")
             if src["kind"]=="file" and not src["realtime"]:
                 blockers.append(f"{label}: live Whisper requires reading files at program speed")
-            notes.append(f"{label}: live {out['caption_format']} two-row roll-up from routed audio channel {cfg['whisper']['audio_channel']}. Recognition and 608 transmission add latency; A/V is not delayed. Source captions are replaced only on this output.")
+            if kind == "tcp":
+                notes.append(f"{label}: raw-text captions from routed audio channel {cfg['whisper']['audio_channel']}, one phrase per line ({out['tcp_line_ending'].upper()}) over TCP "
+                             + ("listener; caption encoders or telnet clients connect to this host." if "listen=1" in out["address"] else "client; reconnects automatically if the encoder drops.")
+                             + " The external encoder embeds the captions; no DeckLink hardware is used.")
+            else:
+                notes.append(f"{label}: live {out['caption_format']} two-row roll-up from routed audio channel {cfg['whisper']['audio_channel']}. Recognition and 608 transmission add latency; A/V is not delayed. Source captions are replaced only on this output.")
         video_label = video_codec_options(kind)[codec]
         outputs.append({"name": label, "transport": kind, "video_codec": codec,
-                        "audio_codec": "pcm" if kind == "decklink" else "aac",
+                        "audio_codec": None if kind == "tcp" else "pcm" if kind == "decklink" else "aac",
                         "audio_framing": "ADTS" if kind in ("udp", "srt", "file") else None,
-                        "container": "SDI / uncompressed / PCM / ANC" if kind == "decklink" else "FLV / H.264 / AAC-LC" if kind in ("rtmp", "youtube") else f"MPEG-TS / {video_label} / AAC-LC (ADTS)",
+                        "container": "Raw caption text / TCP" if kind == "tcp" else "SDI / uncompressed / PCM / ANC" if kind == "decklink" else "FLV / H.264 / AAC-LC" if kind in ("rtmp", "youtube") else f"MPEG-TS / {video_label} / AAC-LC (ADTS)",
                         "captions": out["captions"], "caption_format": out["caption_format"], "spanish_cc2": out["spanish_cc2"], "scte": out["scte"],
                         "scte_label": allowed.get(out["scte"], "Unsupported SCTE policy")})
         if kind == "youtube":
@@ -553,7 +585,7 @@ def plan(raw: dict, capabilities: dict | None = None) -> dict:
 
 def input_command(cfg: dict, *, monitor=False, capabilities=None) -> list[str]:
     src = cfg["input"]
-    args = [executable(src["kind"] == "decklink" or any(o["enabled"] and (o["kind"] == "decklink" or o["captions"] == "recaption" or o["scte"] == "manual" or (o["captions"] == "pass" and o.get("caption_format", "both") != "both")) for o in cfg["outputs"])), "-hide_banner", "-nostdin", "-n", "-loglevel", "info"]
+    args = [executable(src["kind"] == "decklink" or any(o["enabled"] and (o["kind"] == "decklink" or (o["captions"] == "recaption" and o["kind"] != "tcp") or o["scte"] == "manual" or (o["captions"] == "pass" and o.get("caption_format", "both") != "both")) for o in cfg["outputs"])), "-hide_banner", "-nostdin", "-n", "-loglevel", "info"]
     if src["kind"] == "file" and src["realtime"]:
         args += ["-re"]
     if src["kind"] == "decklink":
@@ -607,7 +639,8 @@ def command(cfg: dict, capabilities=None, caption_journal=None, manual_journals=
             return "spankvanc_cc=source=1:format="+{"608":"cea608", "708":"cea708"}[out["caption_format"]]
         return None
     for output_index, out in enumerate(cfg["outputs"]):
-        if not out["enabled"]:
+        if not out["enabled"] or out["kind"] == "tcp":
+            # Caption TCP outputs are served by Python from Whisper text.
             continue
         if out["scte"] == "manual":
             if manual_journals is None or output_index not in manual_journals:
@@ -735,6 +768,7 @@ class Engine:
         self.monitor_process = None
         self.whisper_process = None
         self.bilingual = None
+        self.caption_tcp = None
         self.source_monitor = SourceMonitor()
         self.last_exit = None
         self.stop_requested = False
@@ -823,12 +857,13 @@ class Engine:
             return {"config": copy.deepcopy(self.config), "capabilities": self.capabilities,
                     "translation": dict(self.translation.state(), cc2=self.bilingual.state() if self.bilingual else None),
                     "manual_breaks": dict(self.manual_breaks) if running else {},
+                    "caption_tcp": self.caption_tcp.state() if self.caption_tcp else [],
                     "running": running, "last_exit": self.last_exit, "stopped_by_user": self.stop_requested, "logs": list(self.logs),
                     "plan": readiness, "scte_options": scte_matrix(),
                     "monitor_running": bool(self.monitor_process and self.monitor_process.poll() is None),
                     "source_monitor": self.source_monitor.state(running or bool(self.monitor_process and self.monitor_process.poll() is None)),
                     "video_codec_options": {kind: video_codec_options(kind)
-                                            for kind in ("decklink", "udp", "srt", "file", "rtmp", "youtube")}}
+                                            for kind in ("decklink", "udp", "srt", "file", "rtmp", "youtube", "tcp")}}
 
     def inject_scte(self, raw):
         from .manual_scte import section, append_cue
@@ -881,12 +916,20 @@ class Engine:
                 from .bilingual import BilingualJournal
                 bilingual=BilingualJournal(self.state_dir/'whisper'/'bilingual.pairs', rate=25)
             self.bilingual=bilingual
+            from .caption_tcp import CaptionFanout
+            try:
+                fanout=CaptionFanout.start(cfg,self.logs.append)
+            except OSError as exc:
+                if bilingual:bilingual.close()
+                raise ConfigError("Caption TCP output could not open its socket: "+str(exc)) from exc
+            self.caption_tcp=fanout
             if any(o["enabled"] and o["captions"]=="recaption" for o in cfg["outputs"]):
                 from .whisper_runtime import prepare
                 try:
-                    worker,journal=prepare(self.state_dir,cfg,lambda line: self._whisper_log(line,bilingual),process_group_options())
+                    worker,journal=prepare(self.state_dir,cfg,lambda line: self._whisper_log(line,bilingual,fanout),process_group_options())
                 except (OSError,RuntimeError) as exc:
                     if bilingual:bilingual.close()
+                    if fanout:fanout.close()
                     raise ConfigError(str(exc)) from exc
             self.whisper_process=worker
             from .manual_scte import prepare_journals
@@ -898,23 +941,27 @@ class Engine:
             except Exception:
                 if worker:worker.kill();worker.wait()
                 if bilingual:bilingual.close()
+                if fanout:fanout.close()
                 raise
             if worker:
                 worker.stdin.close()
             process._spank_whisper = worker
             process._spank_bilingual = bilingual
+            process._spank_caption_tcp = fanout
             self.process = process
             if worker:
                 threading.Thread(target=self._watch_whisper,args=(worker,process),daemon=True).start()
             threading.Thread(target=self._read, args=(process,), daemon=True).start()
         return self.state()
 
-    def _whisper_log(self, line, bilingual=None):
+    def _whisper_log(self, line, bilingual=None, caption_tcp=None):
         self.logs.append(line)
         if line == 'Whisper clear' and bilingual:
             bilingual.clear()
         if line.startswith('Whisper CC1: '):
             text=line[len('Whisper CC1: '):]
+            if caption_tcp:
+                caption_tcp.send(text)
             if bilingual:
                 if not bilingual.english(text):
                     self.logs.append('Bilingual 608 backlog: skipped English phrase on bilingual outputs')
@@ -984,6 +1031,8 @@ class Engine:
                 worker.kill();worker.wait()
         bilingual=getattr(process,"_spank_bilingual",None)
         if not monitor and bilingual:bilingual.close()
+        caption_tcp=getattr(process,"_spank_caption_tcp",None)
+        if not monitor and caption_tcp:caption_tcp.close()
         with self.lock:
             if monitor:
                 self.logs.append(f"Source monitor exited with status {code}")

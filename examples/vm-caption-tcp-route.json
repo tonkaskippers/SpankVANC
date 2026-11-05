@@ -1,0 +1,10 @@
+{
+  "name": "VM Whisper captions to encoder over TCP",
+  "input": {"kind": "udp", "address": "udp://0.0.0.0:5000", "realtime": true},
+  "outputs": [
+    {"name": "Caption encoder", "kind": "tcp", "address": "tcp://192.0.2.10:2001", "captions": "recaption", "scte": "strip",
+     "tcp_line_ending": "crlf", "tcp_uppercase": false, "enabled": true}
+  ],
+  "whisper": {"model": "small.en", "language": "en", "delay_ms": 0, "audio_channel": 1, "device": "cpu"},
+  "gpo": {"enabled": false, "port": "", "baud": 115200, "channel": 1, "pulse_ms": 250}
+}

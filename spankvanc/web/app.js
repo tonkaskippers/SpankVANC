@@ -2,7 +2,7 @@
 const $ = id => document.getElementById(id);
 const token = document.querySelector('meta[name="control-token"]').content;
 let config, currentState, scteOptions, videoCodecOptions, dirty = false;
-const kinds = {udp:"UDP · MPEG-TS",srt:"SRT · MPEG-TS",rtmp:"RTMP / RTMPS",youtube:"YouTube · RTMPS",decklink:"DeckLink · SDI",file:"Local MPEG-TS file"};
+const kinds = {udp:"UDP · MPEG-TS",srt:"SRT · MPEG-TS",rtmp:"RTMP / RTMPS",youtube:"YouTube · RTMPS",decklink:"DeckLink · SDI",file:"Local MPEG-TS file",tcp:"Caption text · TCP / Telnet"};
 async function api(path, data) {
   const response = await fetch('/api/' + path, {method:data === undefined ? 'GET':'POST', headers:{'Content-Type':'application/json','X-SpankVANC-Token':token},body:data === undefined ? undefined:JSON.stringify(data)});
   const result = await response.json();
@@ -26,7 +26,18 @@ function renderOutputs(){
     const name=make('input');name.type='text';name.value=out.name;name.maxLength=100;name.setAttribute('aria-label','Output name');name.addEventListener('input',()=>{out.name=name.value;markDirty();});
     const remove=make('button','×','remove');remove.title='Remove output';remove.setAttribute('aria-label','Remove '+out.name);remove.disabled=config.outputs.length===1;remove.onclick=()=>{config.outputs.splice(index,1);markDirty();renderOutputs();};
     head.append(make('span',String(index+1).padStart(2,'0'),'output-number'),enabled,name,remove);card.append(head);
-    card.append(label('Output type',select(kinds,out.kind,value=>{out.kind=value;out.address='';delete out.youtube_server;delete out.youtube_stream_key;delete out.youtube_bitrate_mbps;delete out.srt_mode;if(value==='youtube'){out.youtube_server='rtmps://a.rtmps.youtube.com:443/live2';out.youtube_stream_key='';}renderOutputs();},'kind')));
+    card.append(label('Output type',select(kinds,out.kind,value=>{out.kind=value;out.address='';delete out.youtube_server;delete out.youtube_stream_key;delete out.youtube_bitrate_mbps;delete out.srt_mode;delete out.tcp_uppercase;delete out.tcp_line_ending;if(value==='youtube'){out.youtube_server='rtmps://a.rtmps.youtube.com:443/live2';out.youtube_stream_key='';}if(value==='tcp'){out.captions='recaption';out.scte='strip';out.video_codec='text';out.caption_format='608';out.spanish_cc2=false;out.tcp_line_ending='crlf';out.tcp_uppercase=false;}else if(out.captions==='recaption'&&out.video_codec==='text'){out.captions='pass';}renderOutputs();},'kind')));
+    if(out.kind==='tcp'){
+      const address=make('input');address.value=out.address;address.type='text';address.autocomplete='off';address.spellcheck=false;address.dataset.field='address';address.placeholder='tcp://encoder-ip:port  or  tcp://0.0.0.0:port?listen=1';address.addEventListener('input',()=>{out.address=address.value.trim();markDirty();});
+      card.append(label('Caption encoder address',address));
+      const grid=make('div',undefined,'form-grid');
+      grid.append(label('Line ending',select({crlf:'CR + LF (Telnet)',cr:'CR only',lf:'LF only'},out.tcp_line_ending||'crlf',value=>out.tcp_line_ending=value,'tcp_line_ending')));
+      const upper=make('input');upper.type='checkbox';upper.checked=!!out.tcp_uppercase;upper.dataset.field='tcp_uppercase';upper.addEventListener('change',()=>{out.tcp_uppercase=upper.checked;markDirty();});
+      const upperLabel=label('Send UPPERCASE text',upper);upperLabel.className='check';grid.append(upperLabel);card.append(grid);
+      card.append(make('p','Sends each audioWhisper phrase as one line of plain ASCII text to an external caption encoder, with no DeckLink card needed. tcp://host:port connects to the encoder and reconnects if the connection drops. tcp://0.0.0.0:port?listen=1 waits for encoders or telnet clients to connect. Anything the encoder sends back is ignored.','subtle'));
+      const status=make('p','Not running.','subtle');status.dataset.tcpStatus=out.name;status.style.whiteSpace='pre-line';card.append(status);
+      $('outputs').append(card);return;
+    }
     if(out.kind==='youtube'){
       const server=make('input');server.type='url';server.value=out.youtube_server||'rtmps://a.rtmps.youtube.com:443/live2';server.dataset.field='youtube_server';server.autocomplete='off';server.spellcheck=false;
       const key=make('input');key.type='password';key.value=out.youtube_stream_key||'';key.dataset.field='youtube_stream_key';key.autocomplete='off';key.spellcheck=false;key.placeholder='Paste your YouTube stream key';
@@ -131,6 +142,7 @@ function renderState(state){
   document.querySelectorAll('[data-cue-action]').forEach(el=>{const active=!!state.manual_breaks?.[el.dataset.cueOutput];el.disabled=!state.running||(el.dataset.cueAction==='start'?active:!active);});
   $('exit-code').textContent=state.running?'RUNNING':state.last_exit===null?'IDLE':state.stopped_by_user?'STOPPED':'EXIT '+state.last_exit;
   const log=$('logs');const bottom=log.scrollTop+log.clientHeight>=log.scrollHeight-30;log.textContent=state.logs.join('\n')||'No route started. Configure your source and check readiness.';if(bottom)log.scrollTop=log.scrollHeight;
+  document.querySelectorAll('[data-tcp-status]').forEach(el=>{const s=(state.caption_tcp||[]).find(x=>x.name===el.dataset.tcpStatus);el.textContent=s&&state.running?`${s.status.toUpperCase()} · ${s.mode} ${s.endpoint} · clients ${s.clients} · lines sent ${s.sent} · dropped ${s.dropped}${s.error?' · '+s.error:''}${s.recent.length?'\nLast: '+s.recent[s.recent.length-1]:''}`:'Not running.';});
   const cap=state.capabilities;$('capabilities').replaceChildren();
   [['FFmpeg',!!cap.ffmpeg],['H.264 / libx264',cap.libx264],['MPEG-2 video',cap.mpeg2video],['AAC audio',cap.aac],['SRT transport',cap.srt],['RTMP transport',cap.rtmp],['DeckLink SDI capture',cap.decklink_input],['SDI SCTE-104 / 35 → 104',cap.decklink_scte_output],['DeckLink device discovery',!!cap.decklink_devices?.length],['SCTE-104 → 35',cap.scte_runtime],['Live caption monitor',cap.source_monitor],['Whisper caption replacement',cap.recaption_runtime],['Native 708 output',cap.caption_formats_decklink],['Spanish CC2 engine',cap.bilingual_decklink],['OPUS-MT translation',cap.translation_available],['Whisper CUDA',cap.whisper?.cuda],['TSDuck',!!cap.tsp]].forEach(([name,yes])=>{const row=make('div',undefined,'cap-row');row.append(make('span',name),make('span',yes?'AVAILABLE':'NOT READY',yes?'yes':''));$('capabilities').append(row);});
   $('ffmpeg-version').textContent=cap.version||'FFmpeg not found';renderMonitor({monitor:state.source_monitor,running:state.running,monitor_running:state.monitor_running});

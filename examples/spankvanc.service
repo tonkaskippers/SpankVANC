@@ -1,0 +1,32 @@
+# systemd unit for a headless Linux VM. See docs/LINUX_VM.md.
+# Install: sudo cp examples/spankvanc.service /etc/systemd/system/
+#          sudo systemctl daemon-reload && sudo systemctl enable --now spankvanc
+[Unit]
+Description=SpankVANC caption routing service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=spankvanc
+Group=spankvanc
+WorkingDirectory=/opt/SpankVANC
+# SPANKVANC_WHISPER_PYTHON, SPANKVANC_WHISPER_MODEL_CACHE and, for LAN access,
+# SPANKVANC_PASSWORD live here (chmod 600, owned by root).
+EnvironmentFile=/etc/spankvanc.env
+# Default: loopback only; reach it with an SSH tunnel.
+ExecStart=/usr/bin/python3 -m spankvanc serve --state-dir /var/lib/spankvanc
+# LAN access instead (replace the address with the VM's IP or DNS name):
+# ExecStart=/usr/bin/python3 -m spankvanc serve --state-dir /var/lib/spankvanc --host 0.0.0.0 --allow-host 192.0.2.50
+StateDirectory=spankvanc
+StateDirectoryMode=0700
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/spankvanc
+
+[Install]
+WantedBy=multi-user.target

@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased — Linux VM and caption text over TCP
+
+- Add the **Caption text · TCP / Telnet** output type. Whisper phrases go as
+  printable-ASCII lines (CR+LF, CR or LF; optional uppercase) to an external
+  caption encoder, instead of being embedded in DeckLink VANC.
+  `tcp://host:port` connects as a client with automatic reconnect;
+  `tcp://0.0.0.0:port?listen=1` accepts up to eight encoder/telnet clients.
+  Received bytes are discarded. Status, counters and the last line show on the output card.
+- A TCP-only route needs only distribution FFmpeg and Whisper. It does not
+  select the DeckLink engine or the `spankvanc_cc` filter, and the unused 608
+  journal goes to the null device so long-running text feeds do not fill disk.
+- `serve --host/--allow-host` for headless VMs: binding beyond loopback
+  requires `SPANKVANC_PASSWORD` (HTTP Basic, 12+ characters) and an explicit
+  Host allowlist. The loopback default is unchanged; SSH tunnelling is recommended.
+- Add `docs/LINUX_VM.md`, a hardened systemd unit and a VM example route.
+  Not yet verified against a physical caption encoder.
+
 ## 0.14.0 — local Spanish translation and optional CC2
 
 - Add local OPUS-MT English-to-Spanish Dashboard translations with manual text

@@ -26,8 +26,12 @@ def prepare(state_dir,cfg,log,group_options):
     folder=Path(state_dir)/'whisper';folder.mkdir(parents=True,exist_ok=True,mode=0o700)
     journal=folder/'cc1.pairs';ready=folder/'ready'
     journal.write_bytes(b'');ready.unlink(missing_ok=True)
+    # Caption TCP outputs use Whisper's text lines only. Without an embedding
+    # output, discard 608 pairs so a long-running text feed never fills disk.
+    embedded=any(o['enabled'] and o['captions']=='recaption' and o['kind']!='tcp' for o in cfg['outputs'])
+    worker_journal=str(journal.resolve()) if embedded else os.devnull
     w=cfg['whisper']
-    process=subprocess.Popen([python_path(),'-u',str(WORKER),'--journal',str(journal.resolve()),
+    process=subprocess.Popen([python_path(),'-u',str(WORKER),'--journal',worker_journal,
         '--ready',str(ready.resolve()),'--model',w['model'],'--language',w['language'],'--device',w['device']],
         stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,
         env=dict(os.environ,PYTHONIOENCODING="utf-8"),**group_options)

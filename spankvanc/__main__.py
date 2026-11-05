@@ -17,6 +17,10 @@ def main():
     server = commands.add_parser("serve", help="Open the local browser control service")
     server.add_argument("--port", type=int, default=8877)
     server.add_argument("--state-dir", type=Path, default=Path("runtime"))
+    server.add_argument("--host", default="127.0.0.1",
+                        help="Bind address (default loopback). A LAN address requires SPANKVANC_PASSWORD")
+    server.add_argument("--allow-host", action="append", default=[], metavar="NAME",
+                        help="Host name or IP browsers will use to reach this server (repeatable)")
     args = parser.parse_args()
     try:
         if args.command == "doctor":
@@ -27,7 +31,7 @@ def main():
             return 0 if result["ready"] else 2
         else:
             from .server import serve
-            serve(args.port, args.state_dir)
+            serve(args.port, args.state_dir, args.host, args.allow_host)
     except (ConfigError, OSError, ValueError) as exc:
         print(f"SpankVANC: {exc}", file=sys.stderr)
         return 1

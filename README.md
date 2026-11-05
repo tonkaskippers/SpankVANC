@@ -74,6 +74,9 @@ and optional generated captions. The Windows ZIP includes **START HERE.html**.
   FFmpeg and Blackmagic Desktop Video are installed separately.
 - **Linux / source:** install Python 3.11+ and FFmpeg, then run
   `python3 -m spankvanc serve` from this checkout. Open the local browser URL.
+- **Linux VM / Proxmox without DeckLink:** send Whisper captions as raw text
+  over a TCP/Telnet socket to an external caption encoder, using a stock
+  distribution FFmpeg. See the [Linux VM guide](docs/LINUX_VM.md).
 - For local caption monitoring/SCTE conversion, **Build Extended Capture.cmd**
   builds the engine on your own PC using Ubuntu/WSL and user-supplied SDK 12.8 files.
   See [the guided steps](docs/WINDOWS_BEGINNER.md#part-b--add-live-caption-monitoring-and-scte-conversion).
@@ -107,6 +110,7 @@ download provides only the basic path. Whisper also needs its own
 | TS video / audio | H.264 or MPEG-2, AAC-LC 48 kHz / 192 kbit/s |
 | YouTube | Separate server/key fields; progressive 1080p30 SDR, 14 Mbit/s CBR, two-second GOP; see [encoder profile](docs/YOUTUBE.md) |
 | UDP TS datagrams | Default 1316 bytes; aligned packet sizes validated |
+| Caption text over TCP / Telnet | Whisper phrases as raw ASCII lines to an external encoder (client or listener); no DeckLink or patched FFmpeg; see [Linux VM guide](docs/LINUX_VM.md) |
 | DeckLink SDI output | Select detected output port; local VANC engine, V210 video and embedded PCM audio |
 | SDI SCTE-104 pass / strip | Independent of captions; local 0.8.0 engine and primary SDI data stream |
 | TS SCTE-35 → SDI SCTE-104 | Supported program cues, optional PID and Continue/Stop; see [SDI SCTE guide](docs/SDI_SCTE.md) |
