@@ -153,6 +153,10 @@ on a trusted management VLAN or VPN, otherwise use the SSH tunnel.
 6. **Check readiness**, then **Start**. The output card shows connection state,
    connected clients, lines sent/dropped and the last line sent.
 
+[![Caption text TCP/Telnet output, connected and sending](screenshots/linux-tcp-output.jpg)](screenshots/linux-tcp-output.jpg)
+
+*Test-container capture: stand-in recognizer and local listener as the encoder.*
+
 You can add normal UDP/SRT/RTMP outputs to the same route; they are encoded by
 FFmpeg as usual while the TCP output carries the caption text.
 
@@ -233,6 +237,10 @@ reports or lower. Check:
 ```
 
 ### 4. Use it
+
+[![Route readiness naming the GPU used for Whisper](screenshots/linux-readiness.jpg)](screenshots/linux-readiness.jpg)
+
+*Test-container capture with a simulated GPU.*
 
 Press **Refresh devices** (or restart the service). **Whisper CUDA** should show
 as available, and **Check readiness** names the GPU that will be used. When

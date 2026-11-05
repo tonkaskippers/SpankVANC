@@ -34,6 +34,8 @@ Python runtime.
 
 ## Screenshots
 
+### Windows
+
 These screenshots show an earlier development build running on Windows; labels
 and available controls have changed since then. Click an image to view it full size.
 
@@ -48,6 +50,21 @@ and available controls have changed since then. Click an image to view it full s
 **Route readiness, system capabilities and engine activity**
 
 [![SpankVANC route readiness, detected media capabilities and running engine log](docs/screenshots/engine-status.jpg)](docs/screenshots/engine-status.jpg)
+
+### Linux VM: captions over TCP
+
+These show the current build on Linux with a running route: a UDP source, a
+**Caption text · TCP / Telnet** output and a normal UDP output. They were taken
+in a test container. A stand-in recognizer supplied the caption text, a local
+listener played the encoder, and the NVIDIA GPU shown was simulated.
+
+**Caption TCP output connected and sending uppercase lines**
+
+[![SpankVANC Caption text TCP/Telnet output, connected, with lines sent and the last caption line](docs/screenshots/linux-tcp-output.jpg)](docs/screenshots/linux-tcp-output.jpg)
+
+**Readiness with GPU caption generation, and the engine log**
+
+[![SpankVANC route readiness noting Whisper runs on an NVIDIA GPU, with capabilities and Whisper lines in the engine log](docs/screenshots/linux-readiness.jpg)](docs/screenshots/linux-readiness.jpg)
 
 ## Get running
 
