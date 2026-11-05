@@ -53,6 +53,8 @@ and available controls have changed since then. Click an image to view it full s
 
 SpankVANC is MIT-licensed open source. Internet access is needed for setup downloads, not for application activation or local operation.
 
+### Windows
+
 **Windows testers: [download the 0.14.0 Setup EXE](https://github.com/videoengineeringtutorials-wq/SpankVANC/releases/download/v0.14.0/SpankVANC-0.14.0-Windows11-x64-Setup.exe)**
 ([release notes and checksums](https://github.com/videoengineeringtutorials-wq/SpankVANC/releases/tag/v0.14.0)).
 It installs the app and opens a guided wizard for isolated Python/Whisper/Torch,
@@ -72,11 +74,6 @@ and optional generated captions. The Windows ZIP includes **START HERE.html**.
   [Releases](https://github.com/videoengineeringtutorials-wq/SpankVANC/releases),
   extract it completely, and run **Start SpankVANC.cmd**. Python is included;
   FFmpeg and Blackmagic Desktop Video are installed separately.
-- **Linux / source:** install Python 3.11+ and FFmpeg, then run
-  `python3 -m spankvanc serve` from this checkout. Open the local browser URL.
-- **Linux VM / Proxmox without DeckLink:** send Whisper captions as raw text
-  over a TCP/Telnet socket to an external caption encoder, using a stock
-  distribution FFmpeg. See the [Linux VM guide](docs/LINUX_VM.md).
 - For local caption monitoring/SCTE conversion, **Build Extended Capture.cmd**
   builds the engine on your own PC using Ubuntu/WSL and user-supplied SDK 12.8 files.
   See [the guided steps](docs/WINDOWS_BEGINNER.md#part-b--add-live-caption-monitoring-and-scte-conversion).
@@ -98,6 +95,19 @@ For SDI output, caption monitoring, SCTE conversion or Whisper replacement,
 complete the beginner guide’s **Part B** local engine build. A stock FFmpeg
 download provides only the basic path. Whisper also needs its own
 [Python environment](docs/WHISPER.md#windows-installation-from-scratch).
+
+### Linux
+
+- **From source:** install Python 3.11+ and FFmpeg, then run
+  `python3 -m spankvanc serve` from this checkout and open the local browser URL.
+- **DeckLink capture on Ubuntu:** see [Ubuntu DeckLink input](docs/UBUNTU_DECKLINK.md)
+  to build a DeckLink-enabled FFmpeg for SDI input to IP/file outputs.
+- **Headless VM / Proxmox, no DeckLink:** Whisper captions are sent as raw text
+  over a TCP/Telnet socket to an external caption encoder, which embeds them.
+  This needs only the distribution FFmpeg package and a Whisper Python
+  environment; the local engine build is not required. The control panel
+  is reached through an SSH tunnel, or over the LAN with a password. See the
+  [Linux VM guide](docs/LINUX_VM.md).
 
 ## Features and requirements
 
