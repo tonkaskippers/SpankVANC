@@ -20,7 +20,7 @@ required for this route.
 | Feature | On a VM without DeckLink |
 | --- | --- |
 | UDP / SRT / RTMP / file input | Yes, with distribution FFmpeg |
-| Whisper captions → **Caption text · TCP / Telnet** output | Yes, CPU or passed-through GPU |
+| Whisper captions → **Caption text · TCP / Telnet** output | Yes, on CPU or a passed-through NVIDIA GPU (CUDA) |
 | UDP / SRT / file / RTMP / YouTube media outputs | Yes, alongside the TCP output |
 | Caption pass / strip on IP outputs | Depends on the installed FFmpeg (preflight checks it) |
 | DeckLink SDI in/out, VANC caption embedding, SCTE-104 | Only with PCIe passthrough of the card plus the local engine build |
@@ -40,8 +40,8 @@ These settings are a starting point; adjust them to the model and channel count.
 - **Network:** VirtIO NIC on the bridge that carries the program stream. For
   multicast UDP input, check IGMP snooping/querier settings on the bridge and
   the physical switch.
-- **GPU (optional):** PCI passthrough of an NVIDIA card plus the NVIDIA driver
-  and a CUDA PyTorch build in the VM. Select **Device: cuda** in the route.
+- **GPU (recommended for live captions):** pass an NVIDIA card through to the
+  VM. See [NVIDIA GPU for caption generation](#nvidia-gpu-for-caption-generation).
 
 ## 2. Install SpankVANC and FFmpeg
 
@@ -75,7 +75,8 @@ sudo /opt/whisper-venv/bin/pip install torch --index-url https://download.pytorc
 sudo /opt/whisper-venv/bin/pip install openai-whisper numpy
 ```
 
-Use the default PyTorch index instead of `/whl/cpu` when a GPU is passed through.
+With an NVIDIA GPU, install the CUDA build of PyTorch instead of the `/whl/cpu`
+one. See [NVIDIA GPU for caption generation](#nvidia-gpu-for-caption-generation).
 Then create `/etc/spankvanc.env` (owner root, mode 600):
 
 ```
@@ -146,7 +147,9 @@ on a trusted management VLAN or VPN, otherwise use the SSH tunnel.
      the VM firewall, for example `sudo ufw allow from 192.0.2.10 to any port 2001 proto tcp`.
 4. **Line ending:** CR + LF suits most Telnet text ports. Use CR only or LF only
    if the encoder expects it. Tick **Send UPPERCASE text** for all-caps house style.
-5. **Whisper:** choose the model, language, audio channel and device (CPU unless a GPU is passed through).
+5. **Whisper:** choose the model, language, audio channel and device.
+   **Auto** uses the NVIDIA GPU when CUDA works and falls back to CPU otherwise.
+   **GPU · CUDA required** refuses to start without a working GPU.
 6. **Check readiness**, then **Start**. The output card shows connection state,
    connected clients, lines sent/dropped and the last line sent.
 
@@ -183,6 +186,64 @@ Listener mode: connect to the VM and watch the lines arrive:
 telnet vm-address 2001
 ```
 
+## NVIDIA GPU for caption generation
+
+Whisper runs on an NVIDIA GPU through CUDA (fp16). A GPU lets larger, more
+accurate models (`medium.en`, `turbo`, `large-v3`) keep up live; on CPU, use
+`small.en` or `base.en`. Only caption recognition uses the GPU. Video for IP
+outputs is still encoded on the CPU.
+
+### 1. Pass the card through in Proxmox
+
+1. Enable IOMMU in the host BIOS (VT-d / AMD-Vi) and on the kernel command line
+   (`intel_iommu=on` on Intel; AMD enables it by default), then reboot the host.
+2. Bind the card to `vfio-pci` on the host so the host driver does not claim it.
+   Blacklist `nouveau`/`nvidia` on the host, or use a `vfio-pci ids=` option.
+3. VM settings: machine type **q35**, BIOS **OVMF (UEFI)**, CPU type **host**.
+   Under **Hardware → Add → PCI Device**, select the GPU with **All Functions**
+   and **PCI-Express** enabled.
+
+Follow the Proxmox *PCI Passthrough* documentation for your host version.
+vGPU/mdev profiles also work if the guest sees a CUDA device.
+
+### 2. Install the driver in the VM
+
+```bash
+sudo apt install -y ubuntu-drivers-common && sudo ubuntu-drivers install --gpgpu
+```
+
+```bash
+sudo reboot
+```
+
+After the reboot, `nvidia-smi` must list the card. If it does not, the
+problem is the passthrough or driver, not SpankVANC.
+
+### 3. Install CUDA PyTorch for Whisper
+
+```bash
+sudo /opt/whisper-venv/bin/pip install --force-reinstall torch --index-url https://download.pytorch.org/whl/cu124
+```
+
+Choose the `cuXXX` index matching the newest CUDA version that `nvidia-smi`
+reports or lower. Check:
+
+```bash
+/opt/whisper-venv/bin/python -c "import torch; print(torch.version.cuda, torch.cuda.is_available(), torch.cuda.get_device_name(0))"
+```
+
+### 4. Use it
+
+Press **Refresh devices** (or restart the service). **Whisper CUDA** should show
+as available, and **Check readiness** names the GPU that will be used. When
+CUDA is unavailable, readiness says why: a CPU-only PyTorch build, a driver or
+passthrough problem, or a CUDA initialisation error. When the route starts,
+the engine log shows `Whisper ready: <model> / cuda (<GPU name>)`.
+
+With several GPUs, choose one by adding `CUDA_VISIBLE_DEVICES=1` to
+`/etc/spankvanc.env`. The GPU can also be shared with other VMs only through
+vGPU, not plain passthrough.
+
 ## Limits and verification
 
 - Software-verified: unit tests cover address parsing, text formatting,
@@ -193,6 +254,9 @@ telnet vm-address 2001
   conventions vary, and some expect a login, special control codes or a specific
   line ending. Confirm with the encoder's manual and a bench test before air.
 - Spanish CC2 translation is not available on the TCP output.
+- GPU detection and device selection are software-tested, including against a real
+  CPU-only PyTorch build. Recognition on a passed-through GPU inside Proxmox has
+  not been run as part of this work.
 - Recognition latency (about three seconds of audio per phrase plus processing)
   is not compensated. Program A/V is not delayed.
 - DeckLink inside a VM needs PCIe passthrough of the card, Desktop Video for

@@ -105,7 +105,8 @@ download provides only the basic path. Whisper also needs its own
 - **Headless VM / Proxmox, no DeckLink:** Whisper captions are sent as raw text
   over a TCP/Telnet socket to an external caption encoder, which embeds them.
   This needs only the distribution FFmpeg package and a Whisper Python
-  environment; the local engine build is not required. The control panel
+  environment (CPU, or an NVIDIA GPU passed through for CUDA recognition); the
+  local engine build is not required. The control panel
   is reached through an SSH tunnel, or over the LAN with a password. See the
   [Linux VM guide](docs/LINUX_VM.md).
 

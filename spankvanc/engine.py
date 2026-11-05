@@ -548,7 +548,8 @@ def plan(raw: dict, capabilities: dict | None = None) -> dict:
             if kind != "tcp" and not cap.get("recaption_decklink"):
                 blockers.append(f"{label}: rebuild the selected engine with the live 608 replacement filter")
             if cfg["whisper"]["device"]=="cuda" and not w.get("cuda"):
-                blockers.append(f"{label}: CUDA requested but unavailable in Whisper Python")
+                blockers.append(f"{label}: CUDA requested but unavailable in Whisper Python"
+                                + (f" ({w['cuda_error']})" if w.get("cuda_error") else ""))
             if w.get("models") and cfg["whisper"]["model"] not in w["models"]:
                 blockers.append(f"{label}: model unavailable in installed Whisper; choose a supported model")
             if src["kind"]=="file" and not src["realtime"]:
@@ -577,6 +578,16 @@ def plan(raw: dict, capabilities: dict | None = None) -> dict:
     notes.append("Caption pass retains decoded A/53 608/708 data in the selected video codec; verify each source codec and receiving player.")
     notes.append("Strip removes embedded A/53 captions and excludes separate subtitle/data streams. Burned-in text remains part of the picture.")
     notes.append("SCTE Strip excludes separate data streams, including SCTE-35 PIDs. DeckLink → TS conversion supports program splice start/end/cancel, durations, auto-return, time_signal and raw descriptors with time_type 0. Rejected SCTE messages follow the selected continue/stop policy; arbitrary ANC routing is unavailable.")
+    whisper_cap = cap.get("whisper", {})
+    if any(o["captions"] == "recaption" for o in active) and whisper_cap.get("available"):
+        on_gpu = cfg["whisper"]["device"] != "cpu" and whisper_cap.get("cuda")
+        if on_gpu:
+            gpus = whisper_cap.get("gpus") or ["NVIDIA GPU"]
+            notes.append(f"Whisper caption generation runs on the GPU: {gpus[0]} (CUDA {whisper_cap.get('torch_cuda') or 'available'}, fp16).")
+        elif cfg["whisper"]["device"] == "auto":
+            notes.append("Whisper caption generation runs on the CPU" + (f": {whisper_cap['cuda_error']}." if whisper_cap.get("cuda_error") else "."))
+        if not on_gpu and cfg["whisper"]["model"] in ("medium", "medium.en", "large-v3", "turbo"):
+            notes.append(f"Whisper {cfg['whisper']['model']} on CPU is unlikely to keep up live; use an NVIDIA GPU, or small.en/base.en on CPU.")
     if src["kind"] == "decklink" and any(o["scte"] == "convert" for o in active):
         notes.append("Rejected or unsupported SCTE messages are discarded with a visible warning and saved diagnostic; A/V and later supported cues continue." if src["scte_error_policy"] == "continue" else "Strict SCTE mode stops the route on any rejected message.")
     return {"ready": not blockers, "blockers": list(dict.fromkeys(blockers)), "notes": notes,

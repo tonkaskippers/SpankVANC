@@ -56,6 +56,25 @@ def encode_text(text, initialize=False):
     return bytes(odd(v) for pair in pairs for v in pair)
 
 
+def cuda_status(torch):
+    """Explain GPU availability: a CPU-only wheel and a missing driver differ."""
+    built=getattr(torch.version,'cuda',None)
+    status={'cuda':False,'torch_cuda':built,'gpus':[]}
+    if not built:
+        status['cuda_error']='PyTorch in the Whisper Python is a CPU-only build; install the CUDA build of torch'
+        return status
+    try:
+        if torch.cuda.is_available():
+            status['gpus']=[torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())]
+            status['cuda']=bool(status['gpus'])
+    except Exception as exc:
+        status['cuda_error']='CUDA initialisation failed: '+str(exc)[:200]
+        return status
+    if not status['cuda']:
+        status['cuda_error']='No usable NVIDIA GPU is visible; check the driver with nvidia-smi and the GPU passthrough'
+    return status
+
+
 def main():
     p=argparse.ArgumentParser()
     p.add_argument('--probe',action='store_true')
@@ -67,13 +86,14 @@ def main():
     import torch
     import whisper
     if args.probe:
-        print(json.dumps({'available':True,'cuda':torch.cuda.is_available(),'models':whisper.available_models()}));return
+        print(json.dumps(dict({'available':True,'models':whisper.available_models()},**cuda_status(torch))));return
     device=('cuda' if torch.cuda.is_available() else 'cpu') if args.device=='auto' else args.device
     if device=='cuda' and not torch.cuda.is_available():raise RuntimeError('CUDA was requested but is unavailable')
     if args.model not in whisper.available_models():raise RuntimeError('Model is not supported by this Whisper installation')
     torch.set_num_threads(min(8,os.cpu_count() or 1))
     model=whisper.load_model(args.model,device=device,download_root=os.environ.get('SPANKVANC_WHISPER_MODEL_CACHE'))
-    print('Whisper ready: '+args.model+' / '+device,flush=True)
+    gpu=' ('+torch.cuda.get_device_name(torch.cuda.current_device())+')' if device=='cuda' else ''
+    print('Whisper ready: '+args.model+' / '+device+gpu,flush=True)
     # Parent waits for this marker before it opens capture hardware.
     with open(args.ready,'w',encoding='utf-8') as f:f.write(device)
     chunks=queue.Queue(maxsize=3)

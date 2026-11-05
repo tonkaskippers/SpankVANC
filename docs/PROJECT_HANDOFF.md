@@ -15,6 +15,13 @@ recognizer delivered all phrases over TCP. Not verified with a physical encoder,
 Proxmox guest or real Whisper on a VM. Version is still 0.14.0; no release assets
 were rebuilt.
 
+Follow-up: the user asked for NVIDIA GPU caption generation (not NVENC video
+encoding). CUDA Whisper already existed. Added `cuda_status()` to the
+worker probe (GPU names, torch CUDA build, reason), the CUDA blocker reason,
+GPU/CPU readiness notes and a large-model-on-CPU warning, plus a Proxmox
+passthrough section in LINUX_VM.md. Tests: `tests/test_whisper_gpu.py`. Verified
+against a real CPU-only torch 2.15 wheel; no GPU hardware was available.
+
 # November 3, 2026 — 0.14.0 Windows release preparation
 
 Packages the current local translation/CC2 work and earlier unpublished native

@@ -14,7 +14,13 @@
 - `serve --host/--allow-host` for headless VMs: binding beyond loopback
   requires `SPANKVANC_PASSWORD` (HTTP Basic, 12+ characters) and an explicit
   Host allowlist. The loopback default is unchanged; SSH tunnelling is recommended.
+- Whisper CUDA diagnostics: the probe reports GPU names, the PyTorch CUDA
+  version, and why CUDA is unavailable (CPU-only wheel, missing driver or
+  passthrough, initialisation error). Readiness says whether captions run on the
+  GPU or CPU, and warns when a large model would run on CPU. The engine log
+  names the GPU in use.
 - Add `docs/LINUX_VM.md`, a hardened systemd unit and a VM example route.
+  The guide covers Proxmox NVIDIA passthrough for caption generation.
   Not yet verified against a physical caption encoder.
 
 ## 0.14.0 — local Spanish translation and optional CC2
